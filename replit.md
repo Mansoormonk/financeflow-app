@@ -5,6 +5,7 @@
 FinanceFlow is a mobile-first personal finance management application designed to help users track income, expenses, debts, and overall financial health. The application provides intuitive data visualization and insights to support informed financial decision-making.
 
 **Core Features:**
+- User authentication with secure password hashing
 - Income tracking with categorization
 - Expense management and categorization
 - Debt tracking with payment history
@@ -59,18 +60,27 @@ Preferred communication style: Simple, everyday language.
 
 **Data Layer:**
 - Storage interface (IStorage) for abstraction
-- In-memory storage implementation (MemStorage) for development
-- Designed for future PostgreSQL implementation via Drizzle ORM
+- PostgreSQL persistence via Drizzle ORM for user authentication
+- In-memory storage (MemStorage) for financial data (income, expenses, debts)
 - UUID-based entity identifiers
 
 **Schema Design:**
-- Four main entities: income_entries, expenses, debts, debt_payments
+- Five main entities: users, income_entries, expenses, debts, debt_payments
 - Drizzle schema definitions with Zod validation schemas
 - Numeric fields use precision decimal types for financial accuracy
 - Timestamp tracking for audit trails
 - Foreign key relationships (debt_payments → debts)
+- Unique email constraint on users table enforced at database level
 
-**Rationale:** The storage abstraction pattern allows development to proceed with in-memory storage while the production database is being provisioned. This decouples data access from storage implementation.
+**Authentication:**
+- Database-backed user authentication using PostgreSQL
+- bcryptjs password hashing with 10 salt rounds
+- Session state managed via localStorage (client-side)
+- Secure API endpoints with proper error handling
+- Email uniqueness enforced by database constraint
+- Password hashes never exposed to client
+
+**Rationale:** The storage abstraction pattern decouples data access from storage implementation. User authentication uses PostgreSQL for persistence across server restarts, while financial data uses in-memory storage for rapid development (can be migrated to database when needed).
 
 ### Build and Development
 
@@ -123,10 +133,15 @@ Preferred communication style: Simple, everyday language.
 **Neon Serverless PostgreSQL:**
 - Serverless PostgreSQL database via @neondatabase/serverless
 - Connection string configured via DATABASE_URL environment variable
+- Currently used for user authentication with secure password storage
+- WebSocket connection for serverless compatibility
 - Drizzle ORM for type-safe database queries
 - Migration files generated in /migrations directory
 
-**Alternative:** Application includes in-memory storage fallback for development without database provisioning.
+**Hybrid Storage Approach:** 
+- User authentication data persists in PostgreSQL database
+- Financial data (income, expenses, debts) currently uses in-memory storage for rapid development
+- Financial entities can be migrated to database persistence when needed
 
 ### UI Component Library
 
