@@ -8,6 +8,9 @@ import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { User, Mail, Lock, TrendingUp, ArrowRight } from "lucide-react";
 import { useAuth } from "@/lib/auth-provider";
+import { useToast } from "@/hooks/use-toast";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 
 const signInSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
@@ -30,6 +33,7 @@ type SignUpForm = z.infer<typeof signUpSchema>;
 export default function Auth() {
   const [isSignUp, setIsSignUp] = useState(false);
   const { login } = useAuth();
+  const { toast } = useToast();
 
   const signInForm = useForm<SignInForm>({
     resolver: zodResolver(signInSchema),
@@ -49,16 +53,55 @@ export default function Auth() {
     },
   });
 
+  const loginMutation = useMutation({
+    mutationFn: async (credentials: SignInForm) => {
+      const response = await apiRequest("POST", "/api/auth/login", credentials);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Welcome back!",
+        description: `Signed in as ${data.user.email}`,
+      });
+      login();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Login failed",
+        description: error.message || "Invalid email or password",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const registerMutation = useMutation({
+    mutationFn: async (userData: Omit<SignUpForm, "confirmPassword">) => {
+      const response = await apiRequest("POST", "/api/auth/register", userData);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Account created!",
+        description: `Welcome, ${data.user.name}!`,
+      });
+      login();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Registration failed",
+        description: error.message || "Failed to create account",
+        variant: "destructive",
+      });
+    },
+  });
+
   const onSignIn = (data: SignInForm) => {
-    console.log("Sign in:", data);
-    // TODO: Implement actual authentication with backend
-    login();
+    loginMutation.mutate(data);
   };
 
   const onSignUp = (data: SignUpForm) => {
-    console.log("Sign up:", data);
-    // TODO: Implement actual authentication with backend
-    login();
+    const { confirmPassword, ...userData } = data;
+    registerMutation.mutate(userData);
   };
 
   return (
@@ -240,9 +283,10 @@ export default function Auth() {
                       <Button
                         type="submit"
                         className="w-full group"
+                        disabled={loginMutation.isPending}
                         data-testid="button-sign-in-submit"
                       >
-                        Sign In
+                        {loginMutation.isPending ? "Signing in..." : "Sign In"}
                         <ArrowRight className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform" />
                       </Button>
                     </form>
@@ -353,9 +397,10 @@ export default function Auth() {
                       <Button
                         type="submit"
                         className="w-full group"
+                        disabled={registerMutation.isPending}
                         data-testid="button-sign-up-submit"
                       >
-                        Create Account
+                        {registerMutation.isPending ? "Creating account..." : "Create Account"}
                         <ArrowRight className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform" />
                       </Button>
                     </form>

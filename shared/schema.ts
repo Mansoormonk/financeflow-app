@@ -1,7 +1,15 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, numeric, timestamp, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, numeric, timestamp, integer, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+
+export const users = pgTable("users", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  email: text("email").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
 
 export const incomeEntries = pgTable("income_entries", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -74,6 +82,22 @@ export const insertDebtPaymentSchema = createInsertSchema(debtPayments).omit({
   amount: z.number().positive(),
 });
 
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+  createdAt: true,
+  passwordHash: true,
+}).extend({
+  password: z.string().min(6, "Password must be at least 6 characters"),
+});
+
+export const loginSchema = z.object({
+  email: z.string().email("Please enter a valid email address"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+});
+
+export type User = typeof users.$inferSelect;
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type LoginCredentials = z.infer<typeof loginSchema>;
 export type IncomeEntry = typeof incomeEntries.$inferSelect;
 export type InsertIncomeEntry = z.infer<typeof insertIncomeEntrySchema>;
 export type Expense = typeof expenses.$inferSelect;

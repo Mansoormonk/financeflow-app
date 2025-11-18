@@ -7,10 +7,15 @@ import type {
   InsertDebt,
   DebtPayment,
   InsertDebtPayment,
+  User,
+  InsertUser,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 
 export interface IStorage {
+  getUserByEmail(email: string): Promise<User | undefined>;
+  createUser(user: Omit<InsertUser, "password"> & { passwordHash: string }): Promise<User>;
+
   getIncomeEntries(): Promise<IncomeEntry[]>;
   getIncomeEntry(id: string): Promise<IncomeEntry | undefined>;
   createIncomeEntry(entry: InsertIncomeEntry): Promise<IncomeEntry>;
@@ -34,16 +39,35 @@ export interface IStorage {
 }
 
 export class MemStorage implements IStorage {
+  private users: Map<string, User>;
   private incomeEntries: Map<string, IncomeEntry>;
   private expenses: Map<string, Expense>;
   private debts: Map<string, Debt>;
   private debtPayments: Map<string, DebtPayment>;
 
   constructor() {
+    this.users = new Map();
     this.incomeEntries = new Map();
     this.expenses = new Map();
     this.debts = new Map();
     this.debtPayments = new Map();
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find((user) => user.email === email);
+  }
+
+  async createUser(user: Omit<InsertUser, "password"> & { passwordHash: string }): Promise<User> {
+    const id = randomUUID();
+    const newUser: User = {
+      id,
+      name: user.name,
+      email: user.email,
+      passwordHash: user.passwordHash,
+      createdAt: new Date(),
+    };
+    this.users.set(id, newUser);
+    return newUser;
   }
 
   async getIncomeEntries(): Promise<IncomeEntry[]> {
@@ -63,6 +87,7 @@ export class MemStorage implements IStorage {
       id,
       amount: insertEntry.amount.toString(),
       date: new Date(insertEntry.date),
+      description: insertEntry.description || null,
       createdAt: new Date(),
     };
     this.incomeEntries.set(id, entry);
@@ -90,6 +115,7 @@ export class MemStorage implements IStorage {
       id,
       amount: insertExpense.amount.toString(),
       date: new Date(insertExpense.date),
+      description: insertExpense.description || null,
       createdAt: new Date(),
     };
     this.expenses.set(id, expense);

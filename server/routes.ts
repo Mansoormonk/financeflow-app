@@ -6,9 +6,75 @@ import {
   insertExpenseSchema,
   insertDebtSchema,
   insertDebtPaymentSchema,
+  insertUserSchema,
+  loginSchema,
 } from "@shared/schema";
+import bcrypt from "bcryptjs";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Authentication routes
+  app.post("/api/auth/register", async (req, res) => {
+    try {
+      const validated = insertUserSchema.parse(req.body);
+      
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(validated.email);
+      if (existingUser) {
+        return res.status(400).json({ error: "User with this email already exists" });
+      }
+
+      // Hash password
+      const passwordHash = await bcrypt.hash(validated.password, 10);
+
+      // Create user
+      const user = await storage.createUser({
+        name: validated.name,
+        email: validated.email,
+        passwordHash,
+      });
+
+      // Return user without password hash
+      const { passwordHash: _, ...userWithoutPassword } = user;
+      res.status(201).json({ user: userWithoutPassword });
+    } catch (error: any) {
+      if (error.name === "ZodError") {
+        res.status(400).json({ error: "Invalid user data", details: error.errors });
+      } else {
+        console.error("Registration error:", error);
+        res.status(500).json({ error: "Failed to register user" });
+      }
+    }
+  });
+
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const validated = loginSchema.parse(req.body);
+
+      // Find user by email
+      const user = await storage.getUserByEmail(validated.email);
+      if (!user) {
+        return res.status(401).json({ error: "Invalid email or password" });
+      }
+
+      // Verify password
+      const isValidPassword = await bcrypt.compare(validated.password, user.passwordHash);
+      if (!isValidPassword) {
+        return res.status(401).json({ error: "Invalid email or password" });
+      }
+
+      // Return user without password hash
+      const { passwordHash: _, ...userWithoutPassword } = user;
+      res.json({ user: userWithoutPassword });
+    } catch (error: any) {
+      if (error.name === "ZodError") {
+        res.status(400).json({ error: "Invalid credentials", details: error.errors });
+      } else {
+        console.error("Login error:", error);
+        res.status(500).json({ error: "Failed to login" });
+      }
+    }
+  });
+
   app.get("/api/income", async (req, res) => {
     try {
       const entries = await storage.getIncomeEntries();
