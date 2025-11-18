@@ -18,6 +18,8 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
+  RadialBarChart,
+  RadialBar,
 } from "recharts";
 import type { IncomeEntry, Expense, Debt } from "@shared/schema";
 
@@ -88,6 +90,59 @@ export default function Dashboard() {
     netWorth: monthlyData.slice(0, index + 1).reduce((sum, d) => sum + d.income - d.expenses, 0),
   }));
 
+  // Financial Health Score Calculation
+  const calculateHealthScore = () => {
+    if (totalIncome === 0) return 0;
+    
+    // Factor 1: Expense Ratio (40% weight) - Lower is better
+    const expenseRatio = totalExpenses / totalIncome;
+    const expenseScore = Math.max(0, Math.min(100, (1 - expenseRatio) * 100)) * 0.4;
+    
+    // Factor 2: Debt to Income Ratio (35% weight) - Lower is better
+    const debtRatio = totalDebt / totalIncome;
+    const debtScore = Math.max(0, Math.min(100, (1 - Math.min(debtRatio, 2) / 2) * 100)) * 0.35;
+    
+    // Factor 3: Savings Rate (25% weight) - Higher is better
+    const savingsRate = (totalIncome - totalExpenses) / totalIncome;
+    const savingsScore = Math.max(0, Math.min(100, savingsRate * 100)) * 0.25;
+    
+    return Math.round(expenseScore + debtScore + savingsScore);
+  };
+
+  const healthScore = calculateHealthScore();
+  
+  const getHealthStatus = (score: number) => {
+    if (score >= 80) return { label: "Excellent", color: "hsl(var(--chart-1))", textColor: "text-green-600" };
+    if (score >= 60) return { label: "Good", color: "hsl(var(--chart-2))", textColor: "text-blue-600" };
+    if (score >= 40) return { label: "Fair", color: "hsl(var(--chart-4))", textColor: "text-yellow-600" };
+    return { label: "Poor", color: "hsl(var(--chart-5))", textColor: "text-red-600" };
+  };
+
+  const healthStatus = getHealthStatus(healthScore);
+
+  const getRecommendations = () => {
+    const recommendations: string[] = [];
+    const expenseRatio = totalExpenses / totalIncome;
+    const debtRatio = totalDebt / totalIncome;
+    const savingsRate = (totalIncome - totalExpenses) / totalIncome;
+
+    if (expenseRatio > 0.7) {
+      recommendations.push("Your expenses are high. Consider reducing discretionary spending.");
+    }
+    if (debtRatio > 0.5) {
+      recommendations.push("Focus on paying down debt to improve your financial health.");
+    }
+    if (savingsRate < 0.2) {
+      recommendations.push("Try to save at least 20% of your income each month.");
+    }
+    if (recommendations.length === 0) {
+      recommendations.push("Great job! You're managing your finances well.");
+    }
+    return recommendations;
+  };
+
+  const recommendations = getRecommendations();
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -150,6 +205,70 @@ export default function Dashboard() {
           iconColor={netWorth >= 0 ? "text-green-600" : "text-red-600"}
         />
       </div>
+
+      <Card className="p-6" data-testid="card-health-score">
+        <h3 className="text-lg font-semibold mb-4">Financial Health Score</h3>
+        <div className="flex flex-col md:flex-row items-center gap-6">
+          <div className="w-full md:w-1/2">
+            <ResponsiveContainer width="100%" height={200}>
+              <RadialBarChart
+                cx="50%"
+                cy="50%"
+                innerRadius="60%"
+                outerRadius="90%"
+                barSize={20}
+                data={[{ name: "Health", value: healthScore, fill: healthStatus.color }]}
+                startAngle={180}
+                endAngle={0}
+              >
+                <RadialBar
+                  background
+                  dataKey="value"
+                  cornerRadius={10}
+                />
+                <text
+                  x="50%"
+                  y="45%"
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  className="fill-foreground text-4xl font-bold"
+                  data-testid="text-health-score"
+                >
+                  {healthScore}
+                </text>
+                <text
+                  x="50%"
+                  y="60%"
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  className={`text-sm font-semibold ${healthStatus.textColor}`}
+                  data-testid="text-health-status"
+                >
+                  {healthStatus.label}
+                </text>
+              </RadialBarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="w-full md:w-1/2 space-y-3">
+            <div>
+              <h4 className="text-sm font-semibold mb-2 text-muted-foreground">Recommendations</h4>
+              <ul className="space-y-2" data-testid="list-recommendations">
+                {recommendations.map((rec, idx) => (
+                  <li key={idx} className="text-sm flex items-start gap-2">
+                    <span className="text-primary mt-0.5">•</span>
+                    <span>{rec}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="pt-2 border-t border-border">
+              <p className="text-xs text-muted-foreground">
+                Based on your expense ratio, debt-to-income ratio, and savings rate
+              </p>
+            </div>
+          </div>
+        </div>
+      </Card>
 
       <Card className="p-4">
         <h3 className="text-lg font-semibold mb-4">Income vs Expenses</h3>
