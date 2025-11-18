@@ -1,12 +1,40 @@
+import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { DateRangeFilter, filterByDateRange, serializeDateRange, parseDateRange, type DateRangeValue } from "@/components/date-range-filter";
 import { FileText, TrendingUp, TrendingDown } from "lucide-react";
 import type { IncomeEntry, Expense, Debt } from "@shared/schema";
 
 export default function Reports() {
+  const [location, setLocation] = useLocation();
+  
+  const searchParams = new URLSearchParams(location.split('?')[1] || '');
+  const [dateRange, setDateRange] = useState<DateRangeValue>(() => 
+    parseDateRange(searchParams.get('range'))
+  );
+
+  const isFirstRender = useRef(true);
+
+  useEffect(() => {
+    // Skip URL update on first render - we just initialized from URL
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    
+    const params = new URLSearchParams();
+    const serialized = serializeDateRange(dateRange);
+    if (serialized !== "all") {
+      params.set('range', serialized);
+    }
+    const newSearch = params.toString();
+    const newPath = newSearch ? `/reports?${newSearch}` : '/reports';
+    setLocation(newPath, { replace: true });
+  }, [dateRange, setLocation]);
   const { data: income, isLoading: incomeLoading } = useQuery<IncomeEntry[]>({
     queryKey: ["/api/income"],
   });
@@ -21,23 +49,28 @@ export default function Reports() {
 
   const isLoading = incomeLoading || expensesLoading || debtsLoading;
 
-  const totalIncome = income?.reduce((sum, entry) => sum + Number(entry.amount), 0) || 0;
-  const totalExpenses = expenses?.reduce((sum, entry) => sum + Number(entry.amount), 0) || 0;
-  const totalDebt = debts?.reduce((sum, debt) => sum + Number(debt.currentBalance), 0) || 0;
+  const filteredIncome = income ? filterByDateRange(income, dateRange) : [];
+  const filteredExpenses = expenses ? filterByDateRange(expenses, dateRange) : [];
+  const debtsWithDate = debts?.map(debt => ({ ...debt, date: debt.createdAt })) || [];
+  const filteredDebts = filterByDateRange(debtsWithDate, dateRange);
+
+  const totalIncome = filteredIncome.reduce((sum, entry) => sum + Number(entry.amount), 0);
+  const totalExpenses = filteredExpenses.reduce((sum, entry) => sum + Number(entry.amount), 0);
+  const totalDebt = filteredDebts.reduce((sum, debt) => sum + Number(debt.currentBalance), 0);
   const netProfit = totalIncome - totalExpenses;
   const netWorth = totalIncome - totalExpenses - totalDebt;
 
-  const incomeByCategory = income?.reduce((acc, entry) => {
+  const incomeByCategory = filteredIncome.reduce((acc, entry) => {
     const category = entry.category;
     acc[category] = (acc[category] || 0) + Number(entry.amount);
     return acc;
-  }, {} as Record<string, number>) || {};
+  }, {} as Record<string, number>);
 
-  const expensesByCategory = expenses?.reduce((acc, entry) => {
+  const expensesByCategory = filteredExpenses.reduce((acc, entry) => {
     const category = entry.category;
     acc[category] = (acc[category] || 0) + Number(entry.amount);
     return acc;
-  }, {} as Record<string, number>) || {};
+  }, {} as Record<string, number>);
 
   if (isLoading) {
     return (
@@ -68,9 +101,12 @@ export default function Reports() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold mb-1">Reports</h1>
-        <p className="text-sm text-muted-foreground">Financial statements and analysis</p>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1">
+          <h1 className="text-2xl font-bold mb-1">Reports</h1>
+          <p className="text-sm text-muted-foreground">Financial statements and analysis</p>
+        </div>
+        <DateRangeFilter value={dateRange} onChange={setDateRange} />
       </div>
 
       <Tabs defaultValue="pl" className="w-full">

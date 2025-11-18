@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Plus, CreditCard, Calendar, Trash2, DollarSign, Percent, TrendingDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -10,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { DateRangeFilter, filterByDateRange, serializeDateRange, parseDateRange, type DateRangeValue } from "@/components/date-range-filter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useToast } from "@/hooks/use-toast";
@@ -19,9 +21,34 @@ import type { Debt, InsertDebt, InsertDebtPayment, DebtPayment } from "@shared/s
 import { format } from "date-fns";
 
 export default function Debts() {
+  const [location, setLocation] = useLocation();
   const [isDebtDialogOpen, setIsDebtDialogOpen] = useState(false);
   const [selectedDebtId, setSelectedDebtId] = useState<string | null>(null);
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
+  
+  const searchParams = new URLSearchParams(location.split('?')[1] || '');
+  const [dateRange, setDateRange] = useState<DateRangeValue>(() => 
+    parseDateRange(searchParams.get('range'))
+  );
+
+  const isFirstRender = useRef(true);
+
+  useEffect(() => {
+    // Skip URL update on first render - we just initialized from URL
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    
+    const params = new URLSearchParams();
+    const serialized = serializeDateRange(dateRange);
+    if (serialized !== "all") {
+      params.set('range', serialized);
+    }
+    const newSearch = params.toString();
+    const newPath = newSearch ? `/debts?${newSearch}` : '/debts';
+    setLocation(newPath, { replace: true });
+  }, [dateRange, setLocation]);
   const { toast } = useToast();
 
   const { data: debts, isLoading } = useQuery<Debt[]>({
@@ -126,7 +153,9 @@ export default function Debts() {
     setIsPaymentDialogOpen(true);
   };
 
-  const totalDebt = debts?.reduce((sum, debt) => sum + Number(debt.currentBalance), 0) || 0;
+  const debtsWithDate = debts?.map(debt => ({ ...debt, date: debt.createdAt })) || [];
+  const filteredDebts = filterByDateRange(debtsWithDate, dateRange);
+  const totalDebt = filteredDebts.reduce((sum, debt) => sum + Number(debt.currentBalance), 0);
 
   if (isLoading) {
     return (
@@ -140,18 +169,20 @@ export default function Debts() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1">
           <h1 className="text-2xl font-bold mb-1">Debts</h1>
           <p className="text-sm text-muted-foreground">Manage your liabilities</p>
         </div>
-        <Dialog open={isDebtDialogOpen} onOpenChange={setIsDebtDialogOpen}>
-          <DialogTrigger asChild>
-            <Button size="icon" className="rounded-full" data-testid="button-add-debt">
-              <Plus className="w-5 h-5" />
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
+        <div className="flex items-center gap-2">
+          <DateRangeFilter value={dateRange} onChange={setDateRange} />
+          <Dialog open={isDebtDialogOpen} onOpenChange={setIsDebtDialogOpen}>
+            <DialogTrigger asChild>
+              <Button size="icon" className="rounded-full" data-testid="button-add-debt">
+                <Plus className="w-5 h-5" />
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
             <DialogHeader>
               <DialogTitle>Add Debt</DialogTitle>
             </DialogHeader>
@@ -272,8 +303,9 @@ export default function Debts() {
                 </Button>
               </form>
             </Form>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <Card className="p-6">
@@ -298,9 +330,15 @@ export default function Debts() {
           actionLabel="Add Debt"
           onAction={() => setIsDebtDialogOpen(true)}
         />
+      ) : filteredDebts.length === 0 ? (
+        <EmptyState
+          icon={Calendar}
+          title="No entries in this period"
+          description="Try selecting a different date range to see your debts."
+        />
       ) : (
         <div className="space-y-4">
-          {debts.map((debt) => {
+          {filteredDebts.map((debt) => {
             const paymentProgress = ((Number(debt.principalAmount) - Number(debt.currentBalance)) / Number(debt.principalAmount)) * 100;
             
             return (

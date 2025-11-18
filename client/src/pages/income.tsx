@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Plus, DollarSign, Calendar, Tag, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -9,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/empty-state";
+import { DateRangeFilter, filterByDateRange, serializeDateRange, parseDateRange, type DateRangeValue } from "@/components/date-range-filter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useToast } from "@/hooks/use-toast";
@@ -18,7 +20,32 @@ import type { IncomeEntry, InsertIncomeEntry } from "@shared/schema";
 import { format } from "date-fns";
 
 export default function Income() {
+  const [location, setLocation] = useLocation();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  
+  const searchParams = new URLSearchParams(location.split('?')[1] || '');
+  const [dateRange, setDateRange] = useState<DateRangeValue>(() => 
+    parseDateRange(searchParams.get('range'))
+  );
+
+  const isFirstRender = useRef(true);
+
+  useEffect(() => {
+    // Skip URL update on first render - we just initialized from URL
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    
+    const params = new URLSearchParams();
+    const serialized = serializeDateRange(dateRange);
+    if (serialized !== "all") {
+      params.set('range', serialized);
+    }
+    const newSearch = params.toString();
+    const newPath = newSearch ? `/income?${newSearch}` : '/income';
+    setLocation(newPath, { replace: true });
+  }, [dateRange, setLocation]);
   const { toast } = useToast();
 
   const { data: income, isLoading } = useQuery<IncomeEntry[]>({
@@ -74,7 +101,8 @@ export default function Income() {
     createMutation.mutate(data);
   };
 
-  const totalIncome = income?.reduce((sum, entry) => sum + Number(entry.amount), 0) || 0;
+  const filteredIncome = income ? filterByDateRange(income, dateRange) : [];
+  const totalIncome = filteredIncome.reduce((sum, entry) => sum + Number(entry.amount), 0);
 
   if (isLoading) {
     return (
@@ -89,100 +117,103 @@ export default function Income() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1">
           <h1 className="text-2xl font-bold mb-1">Income</h1>
           <p className="text-sm text-muted-foreground">Track your earnings</p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button size="icon" className="rounded-full" data-testid="button-add-income">
-              <Plus className="w-5 h-5" />
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add Income</DialogTitle>
-            </DialogHeader>
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="date"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Date</FormLabel>
-                      <FormControl>
-                        <Input type="date" {...field} data-testid="input-income-date" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="amount"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Amount</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          placeholder="0.00"
-                          {...field}
-                          onChange={(e) => field.onChange(parseFloat(e.target.value))}
-                          data-testid="input-income-amount"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="category"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Category</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+        <div className="flex items-center gap-2">
+          <DateRangeFilter value={dateRange} onChange={setDateRange} />
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button size="icon" className="rounded-full" data-testid="button-add-income">
+                <Plus className="w-5 h-5" />
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add Income</DialogTitle>
+              </DialogHeader>
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                  <FormField
+                    control={form.control}
+                    name="date"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Date</FormLabel>
                         <FormControl>
-                          <SelectTrigger data-testid="select-income-category">
-                            <SelectValue placeholder="Select category" />
-                          </SelectTrigger>
+                          <Input type="date" {...field} data-testid="input-income-date" />
                         </FormControl>
-                        <SelectContent>
-                          {INCOME_CATEGORIES.map((category) => (
-                            <SelectItem key={category} value={category}>
-                              {category}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="description"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Description (Optional)</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., Monthly salary" {...field} data-testid="input-income-description" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <Button type="submit" className="w-full" disabled={createMutation.isPending} data-testid="button-submit-income">
-                  {createMutation.isPending ? "Adding..." : "Add Income"}
-                </Button>
-              </form>
-            </Form>
-          </DialogContent>
-        </Dialog>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="amount"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Amount</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            {...field}
+                            onChange={(e) => field.onChange(parseFloat(e.target.value))}
+                            data-testid="input-income-amount"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="category"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Category</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-income-category">
+                              <SelectValue placeholder="Select category" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {INCOME_CATEGORIES.map((category) => (
+                              <SelectItem key={category} value={category}>
+                                {category}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="description"
+                    render={({ field}) => (
+                      <FormItem>
+                        <FormLabel>Description (Optional)</FormLabel>
+                        <FormControl>
+                          <Input placeholder="e.g., Monthly salary" {...field} data-testid="input-income-description" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <Button type="submit" className="w-full" disabled={createMutation.isPending} data-testid="button-submit-income">
+                    {createMutation.isPending ? "Adding..." : "Add Income"}
+                  </Button>
+                </form>
+              </Form>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <Card className="p-6">
@@ -207,9 +238,15 @@ export default function Income() {
           actionLabel="Add Income"
           onAction={() => setIsDialogOpen(true)}
         />
+      ) : filteredIncome.length === 0 ? (
+        <EmptyState
+          icon={Calendar}
+          title="No entries in this period"
+          description="Try selecting a different date range to see your income."
+        />
       ) : (
         <div className="space-y-3">
-          {income.map((entry) => (
+          {filteredIncome.map((entry) => (
             <Card key={entry.id} className="p-4 hover-elevate" data-testid={`income-entry-${entry.id}`}>
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-3 flex-1">
