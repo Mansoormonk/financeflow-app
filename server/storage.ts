@@ -10,7 +10,10 @@ import type {
   User,
   InsertUser,
 } from "@shared/schema";
+import { users } from "@shared/schema";
 import { randomUUID } from "crypto";
+import { db } from "./db";
+import { eq } from "drizzle-orm";
 
 export interface IStorage {
   getUserByEmail(email: string): Promise<User | undefined>;
@@ -54,20 +57,17 @@ export class MemStorage implements IStorage {
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find((user) => user.email === email);
+    const result = await db.select().from(users).where(eq(users.email, email));
+    return result[0];
   }
 
   async createUser(user: Omit<InsertUser, "password"> & { passwordHash: string }): Promise<User> {
-    const id = randomUUID();
-    const newUser: User = {
-      id,
+    const result = await db.insert(users).values({
       name: user.name,
       email: user.email,
       passwordHash: user.passwordHash,
-      createdAt: new Date(),
-    };
-    this.users.set(id, newUser);
-    return newUser;
+    }).returning();
+    return result[0];
   }
 
   async getIncomeEntries(): Promise<IncomeEntry[]> {

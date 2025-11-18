@@ -39,6 +39,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       if (error.name === "ZodError") {
         res.status(400).json({ error: "Invalid user data", details: error.errors });
+      } else if (error.code === "23505" || error.message?.includes("unique constraint")) {
+        // PostgreSQL unique constraint violation
+        res.status(400).json({ error: "User with this email already exists" });
       } else {
         console.error("Registration error:", error);
         res.status(500).json({ error: "Failed to register user" });
